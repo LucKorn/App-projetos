@@ -23,8 +23,13 @@ jobs:
       - name: Instalar dependências do projeto
         run: npm install
 
-      - name: Executar EAS Build (APK Preview)
-        run: eas build --platform android --profile preview --non-interactive
+      - name: Vincular Projeto ao Expo
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          
+        run: eas init --account lkorn --non-interactive || true
+
+      - name: Executar EAS Build (APK Preview)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas build --platform android --profile preview --non-interactive
+        
