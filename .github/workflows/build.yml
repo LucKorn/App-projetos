@@ -1,1 +1,31 @@
 
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Instalar EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Instalar dependências do projeto
+        run: npm ci
+
+      - name: Executar EAS Build (APK Preview)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas build --platform android --profile preview --non-interactive
