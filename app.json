@@ -8,6 +8,11 @@
     "userInterfaceStyle": "light",
     "android": {
       "package": "com.luckorn.appprojetos"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "e6528609-c141-4764-bdc9-9dca0426e813"
+      }
     }
   }
 }
