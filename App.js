@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,6 +8,7 @@ import {
   TextInput,
   Modal,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -16,6 +17,25 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
+
+// --- CONFIGURAÇÃO DE NOTIFICAÇÕES ---
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+async function requestNotificationPermissions() {
+  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  let finalStatus = existingStatus;
+  if (existingStatus !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+}
 
 // --- STORE ZUSTAND ---
 const useProjectStore = create(
@@ -24,13 +44,29 @@ const useProjectStore = create(
       projects: [
         {
           id: '1',
-          title: 'Dashboard',
-          description: 'Definir dashboards das filiais',
+          title: 'Dashboard Filiais',
+          description: 'Estrutura gerencial do painel',
           dueDate: '15/10/2026',
-          status: 'Pendente',
+          status: 'Em Andamento',
           tasks: [
-            { id: '101', text: 'Definir telas', assignee: 'Luciano', dueDate: '05/10/2026', completed: false },
-            { id: '102', text: 'Definir tema', assignee: 'Luciano', dueDate: '01/10/2026', completed: true },
+            {
+              id: '101',
+              text: 'Ajustar paleta clara',
+              assignee: 'Luciano',
+              dueDate: '06/09/2026',
+              dueTime: '10:00',
+              notes: 'Usar estilo suave sem azuis fortes',
+              completed: false,
+            },
+            {
+              id: '102',
+              text: 'Revisão de estoque',
+              assignee: 'Luciano',
+              dueDate: '12/09/2026',
+              dueTime: '14:00',
+              notes: '',
+              completed: true,
+            },
           ],
         },
       ],
@@ -60,7 +96,7 @@ const useProjectStore = create(
           projects: state.projects.map((p) => (p.id === id ? { ...p, status } : p)),
         })),
 
-      addTask: (projectId, taskText, assignee, dueDate) =>
+      addTask: (projectId, taskText, assignee, dueDate, dueTime, notes) =>
         set((state) => ({
           projects: state.projects.map((p) => {
             if (p.id === projectId) {
@@ -71,11 +107,26 @@ const useProjectStore = create(
                   {
                     id: Date.now().toString(),
                     text: taskText,
-                    assignee: assignee || 'Não atribuído',
-                    dueDate: dueDate || 'Sem data',
+                    assignee: assignee || 'Geral',
+                    dueDate: dueDate || '',
+                    dueTime: dueTime || '09:00',
+                    notes: notes || '',
                     completed: false,
                   },
                 ],
+              };
+            }
+            return p;
+          }),
+        })),
+
+      updateTask: (projectId, taskId, updatedData) =>
+        set((state) => ({
+          projects: state.projects.map((p) => {
+            if (p.id === projectId) {
+              return {
+                ...p,
+                tasks: p.tasks.map((t) => (t.id === taskId ? { ...t, ...updatedData } : t)),
               };
             }
             return p;
@@ -88,9 +139,7 @@ const useProjectStore = create(
             if (p.id === projectId) {
               return {
                 ...p,
-                tasks: p.tasks.map((t) =>
-                  t.id === taskId ? { ...t, completed: !t.completed } : t
-                ),
+                tasks: p.tasks.map((t) => (t.id === taskId ? { ...t, completed: !t.completed } : t)),
               };
             }
             return p;
@@ -111,7 +160,7 @@ const useProjectStore = create(
         })),
     }),
     {
-      name: 'projects-light-v1',
+      name: 'projects-light-minimal-v2',
       storage: createJSONStorage(() => AsyncStorage),
     }
   )
@@ -119,13 +168,25 @@ const useProjectStore = create(
 
 const Stack = createNativeStackNavigator();
 
-// --- TELA PRINCIPAL (HOME) ---
+// --- TELA PRINCIPAL ---
 function HomeScreen({ navigation }) {
   const { projects, addProject } = useProjectStore();
   const [modalVisible, setModalVisible] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState('');
+
+  useEffect(() => {
+    requestNotificationPermissions();
+  }, []);
+
+  const activeProjects = projects.filter((p) => p.status !== 'Concluído');
+
+  // Cálculos de Indicadores
+  const allTasks = activeProjects.flatMap((p) => p.tasks);
+  const completedTasksCount = allTasks.filter((t) => t.completed).length;
+  const totalTasksCount = allTasks.length;
+  const progressPercentage = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
 
   const handleCreate = () => {
     if (title.trim()) {
@@ -137,82 +198,76 @@ function HomeScreen({ navigation }) {
     }
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'Concluído': return '#34C759';
-      case 'Em Andamento': return '#007AFF';
-      default: return '#FF9500';
-    }
-  };
-
   return (
     <View style={styles.container}>
-      <FlatList
-        data={projects}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => (
+      <ScrollView contentContainerStyle={styles.scrollPadding}>
+        {/* Painel de Avisos & Gráfico de Execução */}
+        <View style={styles.metricsCard}>
+          <Text style={styles.metricsTitle}>Desempenho Geral</Text>
+          <View style={styles.progressBarBackground}>
+            <View style={[styles.progressBarFill, { width: `${progressPercentage}%` }]} />
+          </View>
+          <Text style={styles.progressText}>{progressPercentage}% das tarefas concluídas ({completedTasksCount}/{totalTasksCount})</Text>
+
+          <View style={styles.metricsGrid}>
+            <View style={styles.metricItem}>
+              <Text style={styles.metricValue}>{allTasks.length}</Text>
+              <Text style={styles.metricLabel}>Total Ativas</Text>
+            </View>
+            <View style={styles.metricItem}>
+              <Text style={styles.metricValue}>{activeProjects.length}</Text>
+              <Text style={styles.metricLabel}>Projetos</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionMainTitle}>Projetos Ativos</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('History')}>
+            <Text style={styles.historyLinkText}>Ver Histórico ›</Text>
+          </TouchableOpacity>
+        </View>
+
+        {activeProjects.map((item) => (
           <TouchableOpacity
+            key={item.id}
             style={styles.card}
             onPress={() => navigation.navigate('ProjectDetails', { projectId: item.id })}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>{item.title}</Text>
-              <View style={[styles.badge, { backgroundColor: getStatusColor(item.status) + '18' }]}>
-                <Text style={[styles.badgeText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
+              <View style={styles.softBadge}>
+                <Text style={styles.softBadgeText}>{item.status}</Text>
               </View>
             </View>
-
             {item.description ? <Text style={styles.cardDescription}>{item.description}</Text> : null}
-
             <View style={styles.cardFooter}>
-              <Text style={styles.cardFooterText}>🗓 Prazo Geral: {item.dueDate}</Text>
+              <Text style={styles.cardFooterText}>Prazo: {item.dueDate}</Text>
               <Text style={styles.cardFooterText}>{item.tasks.length} tarefas</Text>
             </View>
           </TouchableOpacity>
-        )}
-      />
+        ))}
+      </ScrollView>
 
-      <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)} activeOpacity={0.8}>
+      <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)} activeOpacity={0.85}>
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
 
+      {/* Modal Criar Projeto */}
       <Modal visible={modalVisible} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Novo Projeto</Text>
-
-            <TextInput
-              style={styles.input}
-              placeholder="Nome do Projeto"
-              placeholderTextColor="#888"
-              value={title}
-              onChangeText={setTitle}
-            />
-
-            <TextInput
-              style={styles.input}
-              placeholder="Descrição"
-              placeholderTextColor="#888"
-              value={description}
-              onChangeText={setDescription}
-            />
-
-            <TextInput
-              style={styles.input}
-              placeholder="Prazo Total do Projeto (ex: 20/10/2026)"
-              placeholderTextColor="#888"
-              value={dueDate}
-              onChangeText={setDueDate}
-            />
-
+            <TextInput style={styles.input} placeholder="Nome do Projeto" value={title} onChangeText={setTitle} />
+            <TextInput style={styles.input} placeholder="Descrição" value={description} onChangeText={setDescription} />
+            <TextInput style={styles.input} placeholder="Prazo Geral (ex: 20/10/2026)" value={dueDate} onChangeText={setDueDate} />
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.btnCancel} onPress={() => setModalVisible(false)}>
-                <Text style={styles.btnTextCancel}>Cancelar</Text>
+              <TouchableOpacity style={styles.btnSecondary} onPress={() => setModalVisible(false)}>
+                <Text style={styles.btnSecondaryText}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.btnSave} onPress={handleCreate}>
-                <Text style={styles.btnTextSave}>Criar</Text>
+              <TouchableOpacity style={styles.btnPrimary} onPress={handleCreate}>
+                <Text style={styles.btnPrimaryText}>Salvar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -222,122 +277,161 @@ function HomeScreen({ navigation }) {
   );
 }
 
-// --- TELA DE DETALHES ---
+// --- TELA DE HISTÓRICO ---
+function HistoryScreen({ navigation }) {
+  const { projects } = useProjectStore();
+  const completedProjects = projects.filter((p) => p.status === 'Concluído');
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollPadding}>
+      {completedProjects.length === 0 ? (
+        <Text style={styles.emptyText}>Nenhum projeto concluído ainda.</Text>
+      ) : (
+        completedProjects.map((item) => (
+          <TouchableOpacity
+            key={item.id}
+            style={styles.card}
+            onPress={() => navigation.navigate('ProjectDetails', { projectId: item.id })}
+          >
+            <Text style={styles.cardTitle}>{item.title}</Text>
+            <Text style={styles.cardDescription}>{item.description}</Text>
+          </TouchableOpacity>
+        ))
+      )}
+    </ScrollView>
+  );
+}
+
+// --- TELA DE DETALHES E EDITAR TAREFA ---
 function ProjectDetailsScreen({ route, navigation }) {
   const { projectId } = route.params;
   const project = useProjectStore((state) => state.projects.find((p) => p.id === projectId));
-  const { removeProject, updateProjectStatus, addTask, toggleTask, removeTask } = useProjectStore();
+  const { removeProject, updateProjectStatus, addTask, toggleTask, removeTask, updateTask } = useProjectStore();
 
   const [taskText, setTaskText] = useState('');
   const [assignee, setAssignee] = useState('');
   const [taskDueDate, setTaskDueDate] = useState('');
+  const [notes, setNotes] = useState('');
+
+  // Modal de edição da tarefa
+  const [editingTask, setEditingTask] = useState(null);
 
   if (!project) return null;
 
   const handleAddTask = () => {
     if (taskText.trim()) {
-      addTask(project.id, taskText.trim(), assignee.trim(), taskDueDate.trim());
+      addTask(project.id, taskText.trim(), assignee.trim(), taskDueDate.trim(), '09:00', notes.trim());
       setTaskText('');
       setAssignee('');
       setTaskDueDate('');
+      setNotes('');
     }
   };
 
-  const statusOptions = ['Pendente', 'Em Andamento', 'Concluído'];
+  const handleSaveEditedTask = () => {
+    if (editingTask) {
+      updateTask(project.id, editingTask.id, editingTask);
+      setEditingTask(null);
+    }
+  };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.detailsContent}>
-      {/* Título, Descrição e Prazo Geral */}
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollPadding}>
       <Text style={styles.projectTitle}>{project.title}</Text>
-      {project.description ? <Text style={styles.projectDescription}>{project.description}</Text> : null}
-      <Text style={styles.projectDueDate}>🗓 Prazo Total: {project.dueDate || 'Sem prazo definido'}</Text>
+      <Text style={styles.projectDescription}>{project.description}</Text>
 
-      {/* Status do Projeto */}
-      <Text style={styles.sectionTitle}>Status do Projeto</Text>
-      <View style={styles.statusRow}>
-        {statusOptions.map((status) => (
+      {/* Selector de Status */}
+      <View style={styles.statusSegmented}>
+        {['Pendente', 'Em Andamento', 'Concluído'].map((st) => (
           <TouchableOpacity
-            key={status}
-            style={[styles.statusBtn, project.status === status && styles.statusBtnActive]}
-            onPress={() => updateProjectStatus(project.id, status)}
+            key={st}
+            style={[styles.segmentBtn, project.status === st && styles.segmentBtnActive]}
+            onPress={() => updateProjectStatus(project.id, st)}
           >
-            <Text style={[styles.statusBtnText, project.status === status && styles.statusBtnTextActive]}>
-              {status}
-            </Text>
+            <Text style={[styles.segmentText, project.status === st && styles.segmentTextActive]}>{st}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* Seção de Tarefas */}
-      <Text style={styles.sectionTitle}>Tarefas</Text>
-
-      {/* Formulário de Adicionar Tarefa com Prazo e Responsável */}
-      <View style={styles.addTaskForm}>
-        <TextInput
-          style={styles.input}
-          placeholder="Nova tarefa..."
-          placeholderTextColor="#888"
-          value={taskText}
-          onChangeText={setTaskText}
-        />
+      {/* Formulário de Tarefas */}
+      <Text style={styles.sectionMainTitle}>Adicionar Tarefa</Text>
+      <View style={styles.cardForm}>
+        <TextInput style={styles.input} placeholder="O que precisa ser feito?" value={taskText} onChangeText={setTaskText} />
         <View style={styles.formRow}>
-          <TextInput
-            style={[styles.input, { flex: 1, marginBottom: 0 }]}
-            placeholder="Responsável"
-            placeholderTextColor="#888"
-            value={assignee}
-            onChangeText={setAssignee}
-          />
-          <TextInput
-            style={[styles.input, { flex: 1, marginBottom: 0 }]}
-            placeholder="Prazo"
-            placeholderTextColor="#888"
-            value={taskDueDate}
-            onChangeText={setTaskDueDate}
-          />
+          <TextInput style={[styles.input, { flex: 1 }]} placeholder="Responsável" value={assignee} onChangeText={setAssignee} />
+          <TextInput style={[styles.input, { flex: 1 }]} placeholder="Data (dd/mm/aaaa)" value={taskDueDate} onChangeText={setTaskDueDate} />
         </View>
-        <TouchableOpacity style={styles.btnAdd} onPress={handleAddTask}>
-          <Text style={styles.btnAddText}>Adicionar Tarefa</Text>
+        <TextInput style={styles.input} placeholder="Anotações / Observações" value={notes} onChangeText={setNotes} />
+        <TouchableOpacity style={styles.btnPrimary} onPress={handleAddTask}>
+          <Text style={styles.btnPrimaryText}>Adicionar Tarefa</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Lista de Tarefas Estilizada */}
-      {project.tasks.map((task) => (
-        <View key={task.id} style={styles.taskCard}>
-          <TouchableOpacity style={styles.checkbox} onPress={() => toggleTask(project.id, task.id)}>
-            <Text style={styles.checkboxMark}>{task.completed ? '✓' : ''}</Text>
+      {/* Lista de Tarefas */}
+      <Text style={styles.sectionMainTitle}>Tarefas do Projeto</Text>
+      {project.tasks.map((t) => (
+        <View key={t.id} style={styles.taskCardItem}>
+          <TouchableOpacity style={styles.checkCircle} onPress={() => toggleTask(project.id, t.id)}>
+            <Text style={styles.checkIcon}>{t.completed ? '✓' : ''}</Text>
           </TouchableOpacity>
 
-          <View style={styles.taskInfo}>
-            <Text style={[styles.taskTitleText, task.completed && styles.completedText]}>
-              {task.text}
-            </Text>
-            <Text style={styles.taskSubText}>
-              👤 {task.assignee} | 🗓 {task.dueDate}
-            </Text>
-          </View>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => setEditingTask(t)}>
+            <Text style={[styles.taskTitle, t.completed && styles.taskCompleted]}>{t.text}</Text>
+            <Text style={styles.taskSubtext}>👤 {t.assignee} {t.dueDate ? `| 🗓 ${t.dueDate}` : ''}</Text>
+          </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => removeTask(project.id, task.id)}>
-            <Text style={styles.removeText}>✕</Text>
+          <TouchableOpacity onPress={() => removeTask(project.id, t.id)}>
+            <Text style={styles.deleteIconText}>✕</Text>
           </TouchableOpacity>
         </View>
       ))}
 
-      {/* Botão Excluir */}
-      <TouchableOpacity
-        style={styles.btnDelete}
-        onPress={() => {
-          removeProject(project.id);
-          navigation.goBack();
-        }}
-      >
-        <Text style={styles.btnDeleteText}>Excluir Projeto</Text>
+      <TouchableOpacity style={styles.btnOutlineDanger} onPress={() => { removeProject(project.id); navigation.goBack(); }}>
+        <Text style={styles.btnOutlineDangerText}>Remover Projeto</Text>
       </TouchableOpacity>
+
+      {/* Modal de Edição da Tarefa */}
+      {editingTask && (
+        <Modal visible animationType="slide" transparent>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Editar Tarefa</Text>
+              <TextInput
+                style={styles.input}
+                value={editingTask.text}
+                onChangeText={(text) => setEditingTask({ ...editingTask, text })}
+              />
+              <TextInput
+                style={styles.input}
+                value={editingTask.assignee}
+                onChangeText={(assignee) => setEditingTask({ ...editingTask, assignee })}
+              />
+              <TextInput
+                style={styles.input}
+                value={editingTask.dueDate}
+                onChangeText={(dueDate) => setEditingTask({ ...editingTask, dueDate })}
+              />
+              <TextInput
+                style={styles.input}
+                value={editingTask.notes}
+                onChangeText={(notes) => setEditingTask({ ...editingTask, notes })}
+              />
+              <View style={styles.modalButtons}>
+                <TouchableOpacity style={styles.btnSecondary} onPress={() => setEditingTask(null)}>
+                  <Text style={styles.btnSecondaryText}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.btnPrimary} onPress={handleSaveEditedTask}>
+                  <Text style={styles.btnPrimaryText}>Salvar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </ScrollView>
   );
 }
 
-// --- NAVEGAÇÃO E TEMAS ---
 export default function App() {
   return (
     <SafeAreaProvider>
@@ -346,84 +440,65 @@ export default function App() {
         <Stack.Navigator
           initialRouteName="Home"
           screenOptions={{
-            headerStyle: { backgroundColor: '#FFFFFF' },
-            headerTintColor: '#000000',
-            headerTitleStyle: { fontWeight: 'bold' },
-            contentStyle: { backgroundColor: '#F8F9FA' },
+            headerStyle: { backgroundColor: '#FAFAFA' },
+            headerTintColor: '#1F2937',
+            headerTitleStyle: { fontWeight: '600', fontSize: 17 },
+            headerTitleAlign: 'center',
+            contentStyle: { backgroundColor: '#F3F4F6' },
           }}
         >
-          <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Projetos' }} />
-          <Stack.Screen name="ProjectDetails" component={ProjectDetailsScreen} options={{ title: 'Detalhes' }} />
+          <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Projetos e Tarefas' }} />
+          <Stack.Screen name="History" component={HistoryScreen} options={{ title: 'Projetos Concluídos' }} />
+          <Stack.Screen name="ProjectDetails" component={ProjectDetailsScreen} options={{ title: 'Painel do Item' }} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
   );
 }
 
-// --- ESTILOS VISUAIS TEMA CLARO (LIGHT) ---
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FA' },
-  listContent: { padding: 16 },
-  detailsContent: { padding: 20 },
+  container: { flex: 1, backgroundColor: '#F3F4F6' },
+  scrollPadding: { padding: 16 },
+  emptyText: { textAlign: 'center', color: '#9CA3AF', marginTop: 40 },
 
-  // Cards Home
-  card: { backgroundColor: '#FFFFFF', padding: 16, borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#E9ECEF' },
+  metricsCard: { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#E5E7EB' },
+  metricsTitle: { fontSize: 15, fontWeight: '600', color: '#374151', marginBottom: 10 },
+  progressBarBackground: { height: 8, backgroundColor: '#E5E7EB', borderRadius: 4, overflow: 'hidden' },
+  progressBarFill: { height: '100%', backgroundColor: '#4B5563' },
+  progressText: { fontSize: 12, color: '#6B7280', marginTop: 6, textAlign: 'right' },
+  metricsGrid: { flexDirection: 'row', marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
+  metricItem: { flex: 1, alignItems: 'center' },
+  metricValue: { fontSize: 18, fontWeight: '700', color: '#1F2937' },
+  metricLabel: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionMainTitle: { fontSize: 16, fontWeight: '600', color: '#1F2937', marginVertical: 8 },
+  historyLinkText: { fontSize: 13, color: '#4B5563', fontWeight: '500' },
+
+  card: { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#E5E7EB' },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#1A1A1A' },
-  cardDescription: { fontSize: 14, color: '#6C757D', marginTop: 4 },
-  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F1F3F5' },
-  cardFooterText: { fontSize: 12, color: '#868E96' },
+  cardTitle: { fontSize: 16, fontWeight: '600', color: '#111827' },
+  cardDescription: { fontSize: 13, color: '#6B7280', marginTop: 4 },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
+  cardFooterText: { fontSize: 12, color: '#9CA3AF' },
 
-  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
-  badgeText: { fontSize: 12, fontWeight: 'bold' },
+  softBadge: { backgroundColor: '#F3F4F6', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
+  softBadgeText: { fontSize: 12, color: '#4B5563', fontWeight: '500' },
 
-  // FAB
-  fab: { position: 'absolute', right: 20, bottom: 20, backgroundColor: '#007AFF', width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', elevation: 3 },
-  fabText: { color: '#FFFFFF', fontSize: 28, fontWeight: 'bold' },
+  fab: { position: 'absolute', right: 20, bottom: 20, backgroundColor: '#374151', width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', elevation: 4 },
+  fabText: { color: '#FFFFFF', fontSize: 26, fontWeight: '300' },
 
-  // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 20 },
-  modalContent: { backgroundColor: '#FFFFFF', padding: 20, borderRadius: 12 },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12, color: '#1A1A1A' },
-  modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 12 },
-  btnCancel: { padding: 10 },
-  btnTextCancel: { color: '#6C757D', fontWeight: 'bold' },
-  btnSave: { backgroundColor: '#007AFF', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 },
-  btnTextSave: { color: '#FFFFFF', fontWeight: 'bold' },
+  statusSegmented: { flexDirection: 'row', backgroundColor: '#E5E7EB', borderRadius: 8, padding: 3, marginVertical: 12 },
+  segmentBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 6 },
+  segmentBtnActive: { backgroundColor: '#FFFFFF' },
+  segmentText: { fontSize: 13, color: '#6B7280' },
+  segmentTextActive: { color: '#111827', fontWeight: '600' },
 
-  // Detalhes do Projeto
-  projectTitle: { fontSize: 24, fontWeight: 'bold', color: '#000000' },
-  projectDescription: { fontSize: 15, color: '#6C757D', marginTop: 4 },
-  projectDueDate: { fontSize: 13, color: '#007AFF', fontWeight: '600', marginTop: 8 },
+  cardForm: { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 16 },
+  input: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 10, fontSize: 14, color: '#111827', marginBottom: 8 },
+  formRow: { flexDirection: 'row', gap: 8 },
 
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#1A1A1A', marginTop: 24, marginBottom: 12 },
-
-  // Status
-  statusRow: { flexDirection: 'row', gap: 8 },
-  statusBtn: { flex: 1, paddingVertical: 10, backgroundColor: '#E9ECEF', borderRadius: 8, alignItems: 'center' },
-  statusBtnActive: { backgroundColor: '#007AFF' },
-  statusBtnText: { color: '#495057', fontSize: 13, fontWeight: '600' },
-  statusBtnTextActive: { color: '#FFFFFF', fontWeight: 'bold' },
-
-  // Form de Tarefa
-  addTaskForm: { backgroundColor: '#FFFFFF', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E9ECEF', marginBottom: 16 },
-  input: { backgroundColor: '#F8F9FA', color: '#000000', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#DEE2E6', marginBottom: 8, fontSize: 14 },
-  formRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  btnAdd: { backgroundColor: '#007AFF', padding: 12, borderRadius: 8, alignItems: 'center' },
-  btnAddText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
-
-  // Lista de Tarefas
-  taskCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: '#E9ECEF' },
-  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#007AFF', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  checkboxMark: { color: '#007AFF', fontWeight: 'bold', fontSize: 12 },
-  taskInfo: { flex: 1 },
-  taskTitleText: { fontSize: 15, color: '#212529', fontWeight: '500' },
-  completedText: { textDecorationLine: 'line-through', color: '#ADB5BD' },
-  taskSubText: { fontSize: 12, color: '#868E96', marginTop: 2 },
-  removeText: { color: '#FF3B30', fontSize: 18, fontWeight: 'bold', paddingHorizontal: 8 },
-
-  // Excluir
-  btnDelete: { marginTop: 32, backgroundColor: '#FF3B30', padding: 14, borderRadius: 8, alignItems: 'center' },
-  btnDeleteText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 },
-});
-                                                                  
+  btnPrimary: { backgroundColor: '#374151', padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 4 },
+  btnPrimaryText: { color: '#FFFFFF', fontWeight: '600', fontSize: 14 },
+  btnSecondary: { padding: 12 },
+  btnSecondaryText: { color: '#6B7280', fontWeight: 
