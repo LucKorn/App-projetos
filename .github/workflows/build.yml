@@ -33,3 +33,4 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: eas build --platform android --profile preview --non-interactive --arg "-PsuppressKotlinVersionCompatibilityCheck=1.9.24"
+        
