@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "App projetos",
+    "slug": "App-projetos",
+    "owner": "lkorn",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "com.luckorn.appprojetos"
+    }
+  }
+}
