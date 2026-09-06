@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -17,64 +17,37 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// --- STORE ZUSTAND ESTILO MONDAY ---
+// --- STORE ZUSTAND ---
 const useProjectStore = create(
   persist(
     (set) => ({
       projects: [
         {
           id: '1',
-          title: 'Pipeline CI/CD Android',
-          owner: 'Luciano Korn',
-          priority: 'Alta',
-          status: 'Concluído',
-          dueDate: '10/09/2026',
-          description: 'Ajustes no fluxo automatizado via GitHub Actions.',
-          notes: 'Builds de preview configurados para gerar APK sem erros de Kotlin.',
+          title: 'Dashboard',
+          description: 'Definir dashboards das filiais',
+          dueDate: '15/10/2026',
+          status: 'Pendente',
           tasks: [
-            { id: '101', text: 'Ajustar dependências no package.json', completed: true },
-            { id: '102', text: 'Validar build no EAS CLI', completed: true },
-          ],
-        },
-        {
-          id: '2',
-          title: 'Módulo de Gestão Estilo Monday',
-          owner: 'Luciano Korn',
-          priority: 'Média',
-          status: 'Em Andamento',
-          dueDate: '25/09/2026',
-          description: 'Adicionar colunas de responsável, prioridade, prazos e anotações.',
-          notes: 'Links úteis e dados do projeto integrados na mesma tela.',
-          tasks: [
-            { id: '201', text: 'Adicionar campo de responsável no formulário', completed: true },
-            { id: '202', text: 'Criar seletor de prioridade (Alta/Média/Baixa)', completed: true },
+            { id: '101', text: 'Definir telas', assignee: 'Luciano', dueDate: '05/10/2026', completed: false },
+            { id: '102', text: 'Definir tema', assignee: 'Luciano', dueDate: '01/10/2026', completed: true },
           ],
         },
       ],
 
-      addProject: (newProject) =>
+      addProject: (title, description, dueDate) =>
         set((state) => ({
           projects: [
             ...state.projects,
             {
               id: Date.now().toString(),
+              title,
+              description,
+              dueDate: dueDate || 'Sem prazo',
               status: 'Pendente',
-              priority: newProject.priority || 'Média',
-              owner: newProject.owner || 'Não atribuído',
-              dueDate: newProject.dueDate || 'Sem prazo',
-              notes: newProject.notes || '',
-              description: newProject.description || '',
               tasks: [],
-              ...newProject,
             },
           ],
-        })),
-
-      updateProject: (id, updatedFields) =>
-        set((state) => ({
-          projects: state.projects.map((p) =>
-            p.id === id ? { ...p, ...updatedFields } : p
-          ),
         })),
 
       removeProject: (id) =>
@@ -82,7 +55,12 @@ const useProjectStore = create(
           projects: state.projects.filter((p) => p.id !== id),
         })),
 
-      addTask: (projectId, taskText) =>
+      updateProjectStatus: (id, status) =>
+        set((state) => ({
+          projects: state.projects.map((p) => (p.id === id ? { ...p, status } : p)),
+        })),
+
+      addTask: (projectId, taskText, assignee, dueDate) =>
         set((state) => ({
           projects: state.projects.map((p) => {
             if (p.id === projectId) {
@@ -90,7 +68,13 @@ const useProjectStore = create(
                 ...p,
                 tasks: [
                   ...p.tasks,
-                  { id: Date.now().toString(), text: taskText, completed: false },
+                  {
+                    id: Date.now().toString(),
+                    text: taskText,
+                    assignee: assignee || 'Não atribuído',
+                    dueDate: dueDate || 'Sem data',
+                    completed: false,
+                  },
                 ],
               };
             }
@@ -127,7 +111,7 @@ const useProjectStore = create(
         })),
     }),
     {
-      name: 'monday-projects-storage-v3',
+      name: 'projects-light-v1',
       storage: createJSONStorage(() => AsyncStorage),
     }
   )
@@ -135,51 +119,29 @@ const useProjectStore = create(
 
 const Stack = createNativeStackNavigator();
 
-// CORES E HELPERS
-const getStatusColor = (status) => {
-  switch (status) {
-    case 'Concluído': return '#34C759';
-    case 'Em Andamento': return '#007AFF';
-    default: return '#FF9500';
-  }
-};
-
-const getPriorityColor = (priority) => {
-  switch (priority) {
-    case 'Alta': return '#FF3B30';
-    case 'Média': return '#FF9500';
-    default: return '#8E8E93';
-  }
-};
-
 // --- TELA PRINCIPAL (HOME) ---
 function HomeScreen({ navigation }) {
   const { projects, addProject } = useProjectStore();
   const [modalVisible, setModalVisible] = useState(false);
   const [title, setTitle] = useState('');
-  const [owner, setOwner] = useState('');
-  const [priority, setPriority] = useState('Média');
-  const [dueDate, setDueDate] = useState('');
   const [description, setDescription] = useState('');
-  const [notes, setNotes] = useState('');
+  const [dueDate, setDueDate] = useState('');
 
   const handleCreate = () => {
     if (title.trim()) {
-      addProject({
-        title: title.trim(),
-        owner: owner.trim() || 'Luciano Korn',
-        priority,
-        dueDate: dueDate.trim() || 'Sem prazo',
-        description: description.trim(),
-        notes: notes.trim(),
-      });
+      addProject(title.trim(), description.trim(), dueDate.trim());
       setTitle('');
-      setOwner('');
-      setPriority('Média');
-      setDueDate('');
       setDescription('');
-      setNotes('');
+      setDueDate('');
       setModalVisible(false);
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'Concluído': return '#34C759';
+      case 'Em Andamento': return '#007AFF';
+      default: return '#FF9500';
     }
   };
 
@@ -189,422 +151,279 @@ function HomeScreen({ navigation }) {
         data={projects}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => {
-          const completedTasks = item.tasks.filter((t) => t.completed).length;
-          const totalTasks = item.tasks.length;
-
-          return (
-            <TouchableOpacity
-              style={styles.card}
-              onPress={() => navigation.navigate('ProjectDetails', { projectId: item.id })}
-              activeOpacity={0.7}
-            >
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardTitle}>{item.title}</Text>
-                <View style={[styles.badge, { backgroundColor: getStatusColor(item.status) + '22' }]}>
-                  <Text style={[styles.badgeText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
-                </View>
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => navigation.navigate('ProjectDetails', { projectId: item.id })}
+            activeOpacity={0.7}
+          >
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>{item.title}</Text>
+              <View style={[styles.badge, { backgroundColor: getStatusColor(item.status) + '18' }]}>
+                <Text style={[styles.badgeText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
               </View>
+            </View>
 
-              <View style={styles.mondayRow}>
-                <Text style={styles.mondayText}>👤 {item.owner}</Text>
-                <View style={[styles.badge, { backgroundColor: getPriorityColor(item.priority) + '22' }]}>
-                  <Text style={[styles.badgeText, { color: getPriorityColor(item.priority) }]}>
-                    Prioridade: {item.priority}
-                  </Text>
-                </View>
-              </View>
+            {item.description ? <Text style={styles.cardDescription}>{item.description}</Text> : null}
 
-              {item.description ? (
-                <Text style={styles.cardDescription} numberOfLines={2}>
-                  {item.description}
-                </Text>
-              ) : null}
-
-              <View style={styles.cardFooter}>
-                <Text style={styles.cardInfoText}>🗓 {item.dueDate}</Text>
-                <Text style={styles.cardInfoText}>
-                  {totalTasks > 0 ? `☑ ${completedTasks}/${totalTasks} subitens` : 'Sem subtarefas'}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          );
-        }}
+            <View style={styles.cardFooter}>
+              <Text style={styles.cardFooterText}>🗓 Prazo Geral: {item.dueDate}</Text>
+              <Text style={styles.cardFooterText}>{item.tasks.length} tarefas</Text>
+            </View>
+          </TouchableOpacity>
+        )}
       />
 
       <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)} activeOpacity={0.8}>
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
 
-      {/* Modal Criar Projeto estilo Monday */}
       <Modal visible={modalVisible} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
-          <ScrollView contentContainerStyle={{ justifyContent: 'center', flexGrow: 1 }}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Novo Item / Projeto</Text>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Novo Projeto</Text>
 
-              <TextInput
-                style={styles.input}
-                placeholder="Nome do Projeto *"
-                placeholderTextColor="#666"
-                value={title}
-                onChangeText={setTitle}
-              />
+            <TextInput
+              style={styles.input}
+              placeholder="Nome do Projeto"
+              placeholderTextColor="#888"
+              value={title}
+              onChangeText={setTitle}
+            />
 
-              <TextInput
-                style={styles.input}
-                placeholder="Responsável (ex: Luciano Korn)"
-                placeholderTextColor="#666"
-                value={owner}
-                onChangeText={setOwner}
-              />
+            <TextInput
+              style={styles.input}
+              placeholder="Descrição"
+              placeholderTextColor="#888"
+              value={description}
+              onChangeText={setDescription}
+            />
 
-              <Text style={styles.fieldLabel}>Prioridade:</Text>
-              <View style={styles.prioritySelector}>
-                {['Baixa', 'Média', 'Alta'].map((p) => (
-                  <TouchableOpacity
-                    key={p}
-                    style={[styles.priorityBtn, priority === p && { backgroundColor: getPriorityColor(p) }]}
-                    onPress={() => setPriority(p)}
-                  >
-                    <Text style={[styles.priorityBtnText, priority === p && { color: '#FFF' }]}>{p}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+            <TextInput
+              style={styles.input}
+              placeholder="Prazo Total do Projeto (ex: 20/10/2026)"
+              placeholderTextColor="#888"
+              value={dueDate}
+              onChangeText={setDueDate}
+            />
 
-              <TextInput
-                style={styles.input}
-                placeholder="Prazo (ex: 20/10/2026)"
-                placeholderTextColor="#666"
-                value={dueDate}
-                onChangeText={setDueDate}
-              />
-
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="Descrição resumida"
-                placeholderTextColor="#666"
-                multiline
-                numberOfLines={2}
-                value={description}
-                onChangeText={setDescription}
-              />
-
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="Anotações Gerais / Links / Observações"
-                placeholderTextColor="#666"
-                multiline
-                numberOfLines={3}
-                value={notes}
-                onChangeText={setNotes}
-              />
-
-              <View style={styles.modalButtons}>
-                <TouchableOpacity style={styles.btnCancel} onPress={() => setModalVisible(false)}>
-                  <Text style={styles.btnTextCancel}>Cancelar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.btnSave} onPress={handleCreate}>
-                  <Text style={styles.btnTextSave}>Criar Item</Text>
-                </TouchableOpacity>
-              </View>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.btnCancel} onPress={() => setModalVisible(false)}>
+                <Text style={styles.btnTextCancel}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.btnSave} onPress={handleCreate}>
+                <Text style={styles.btnTextSave}>Criar</Text>
+              </TouchableOpacity>
             </View>
-          </ScrollView>
+          </View>
         </View>
       </Modal>
     </View>
   );
 }
 
-// --- TELA DE DETALHES E EDIÇÃO COMPLETA ---
+// --- TELA DE DETALHES ---
 function ProjectDetailsScreen({ route, navigation }) {
   const { projectId } = route.params;
   const project = useProjectStore((state) => state.projects.find((p) => p.id === projectId));
-  const { updateProject, removeProject, addTask, toggleTask, removeTask } = useProjectStore();
+  const { removeProject, updateProjectStatus, addTask, toggleTask, removeTask } = useProjectStore();
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [title, setTitle] = useState('');
-  const [owner, setOwner] = useState('');
-  const [priority, setPriority] = useState('Média');
-  const [dueDate, setDueDate] = useState('');
-  const [description, setDescription] = useState('');
-  const [notes, setNotes] = useState('');
-  const [taskInput, setTaskInput] = useState('');
-
-  useEffect(() => {
-    if (project) {
-      setTitle(project.title);
-      setOwner(project.owner || '');
-      setPriority(project.priority || 'Média');
-      setDueDate(project.dueDate || '');
-      setDescription(project.description || '');
-      setNotes(project.notes || '');
-    }
-  }, [project]);
+  const [taskText, setTaskText] = useState('');
+  const [assignee, setAssignee] = useState('');
+  const [taskDueDate, setTaskDueDate] = useState('');
 
   if (!project) return null;
 
-  const handleSaveEdits = () => {
-    if (title.trim()) {
-      updateProject(project.id, {
-        title: title.trim(),
-        owner: owner.trim(),
-        priority,
-        dueDate: dueDate.trim(),
-        description: description.trim(),
-        notes: notes.trim(),
-      });
-      setIsEditing(false);
-    }
-  };
-
   const handleAddTask = () => {
-    if (taskInput.trim()) {
-      addTask(project.id, taskInput.trim());
-      setTaskInput('');
+    if (taskText.trim()) {
+      addTask(project.id, taskText.trim(), assignee.trim(), taskDueDate.trim());
+      setTaskText('');
+      setAssignee('');
+      setTaskDueDate('');
     }
-  };
-
-  const handleDeleteProject = () => {
-    removeProject(project.id);
-    navigation.goBack();
   };
 
   const statusOptions = ['Pendente', 'Em Andamento', 'Concluído'];
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.detailsContent}>
-      <View style={styles.headerRow}>
-        <Text style={styles.sectionHeaderTitle}>Painel do Item</Text>
-        <TouchableOpacity
-          style={styles.btnEditToggle}
-          onPress={() => {
-            if (isEditing) handleSaveEdits();
-            else setIsEditing(true);
-          }}
-        >
-          <Text style={styles.btnEditToggleText}>
-            {isEditing ? 'Salvar Edição' : 'Editar Campos'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {/* Título, Descrição e Prazo Geral */}
+      <Text style={styles.projectTitle}>{project.title}</Text>
+      {project.description ? <Text style={styles.projectDescription}>{project.description}</Text> : null}
+      <Text style={styles.projectDueDate}>🗓 Prazo Total: {project.dueDate || 'Sem prazo definido'}</Text>
 
-      {isEditing ? (
-        <View style={styles.editCard}>
-          <Text style={styles.fieldLabel}>Título:</Text>
-          <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholderTextColor="#666" />
-
-          <Text style={styles.fieldLabel}>Responsável:</Text>
-          <TextInput style={styles.input} value={owner} onChangeText={setOwner} placeholderTextColor="#666" />
-
-          <Text style={styles.fieldLabel}>Prioridade:</Text>
-          <View style={styles.prioritySelector}>
-            {['Baixa', 'Média', 'Alta'].map((p) => (
-              <TouchableOpacity
-                key={p}
-                style={[styles.priorityBtn, priority === p && { backgroundColor: getPriorityColor(p) }]}
-                onPress={() => setPriority(p)}
-              >
-                <Text style={[styles.priorityBtnText, priority === p && { color: '#FFF' }]}>{p}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.fieldLabel}>Prazo:</Text>
-          <TextInput style={styles.input} value={dueDate} onChangeText={setDueDate} placeholderTextColor="#666" />
-
-          <Text style={styles.fieldLabel}>Descrição:</Text>
-          <TextInput style={[styles.input, styles.textArea]} value={description} onChangeText={setDescription} multiline numberOfLines={2} placeholderTextColor="#666" />
-
-          <Text style={styles.fieldLabel}>Anotações & Documentação:</Text>
-          <TextInput style={[styles.input, styles.textAreaLarge]} value={notes} onChangeText={setNotes} multiline numberOfLines={5} placeholderTextColor="#666" />
-        </View>
-      ) : (
-        <View style={styles.viewCard}>
-          <Text style={styles.title}>{project.title}</Text>
-
-          <View style={styles.mondayMetaGrid}>
-            <View style={styles.metaBox}>
-              <Text style={styles.metaLabel}>Responsável</Text>
-              <Text style={styles.metaValue}>👤 {project.owner || 'Não definido'}</Text>
-            </View>
-
-            <View style={styles.metaBox}>
-              <Text style={styles.metaLabel}>Prioridade</Text>
-              <Text style={[styles.metaValue, { color: getPriorityColor(project.priority) }]}>
-                ★ {project.priority}
-              </Text>
-            </View>
-
-            <View style={styles.metaBox}>
-              <Text style={styles.metaLabel}>Prazo</Text>
-              <Text style={styles.metaValue}>🗓 {project.dueDate}</Text>
-            </View>
-          </View>
-
-          {project.description ? (
-            <Text style={styles.description}>{project.description}</Text>
-          ) : null}
-
-          <Text style={styles.sectionTitle}>Anotações / Bloco de Notas</Text>
-          <View style={styles.notesBox}>
-            <Text style={styles.notesText}>
-              {project.notes ? project.notes : 'Nenhuma anotação vinculada a este item.'}
-            </Text>
-          </View>
-        </View>
-      )}
-
-      {/* Coluna de Status */}
-      <Text style={styles.sectionTitle}>Status do Item</Text>
-      <View style={styles.statusContainer}>
+      {/* Status do Projeto */}
+      <Text style={styles.sectionTitle}>Status do Projeto</Text>
+      <View style={styles.statusRow}>
         {statusOptions.map((status) => (
           <TouchableOpacity
             key={status}
-            style={[styles.statusOption, project.status === status && { backgroundColor: getStatusColor(status), borderColor: getStatusColor(status) }]}
-            onPress={() => updateProject(project.id, { status })}
+            style={[styles.statusBtn, project.status === status && styles.statusBtnActive]}
+            onPress={() => updateProjectStatus(project.id, status)}
           >
-            <Text style={[styles.statusOptionText, project.status === status && { color: '#FFF' }]}>
+            <Text style={[styles.statusBtnText, project.status === status && styles.statusBtnTextActive]}>
               {status}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* Checklist / Subtarefas */}
-      <Text style={styles.sectionTitle}>Subtarefas / Checklist</Text>
-      <View style={styles.taskInputContainer}>
+      {/* Seção de Tarefas */}
+      <Text style={styles.sectionTitle}>Tarefas</Text>
+
+      {/* Formulário de Adicionar Tarefa com Prazo e Responsável */}
+      <View style={styles.addTaskForm}>
         <TextInput
-          style={styles.taskInput}
-          placeholder="Adicionar nova subtarefa..."
-          placeholderTextColor="#666"
-          value={taskInput}
-          onChangeText={setTaskInput}
+          style={styles.input}
+          placeholder="Nova tarefa..."
+          placeholderTextColor="#888"
+          value={taskText}
+          onChangeText={setTaskText}
         />
-        <TouchableOpacity style={styles.btnAddTask} onPress={handleAddTask}>
-          <Text style={styles.btnAddTaskText}>+</Text>
+        <View style={styles.formRow}>
+          <TextInput
+            style={[styles.input, { flex: 1, marginBottom: 0 }]}
+            placeholder="Responsável"
+            placeholderTextColor="#888"
+            value={assignee}
+            onChangeText={setAssignee}
+          />
+          <TextInput
+            style={[styles.input, { flex: 1, marginBottom: 0 }]}
+            placeholder="Prazo"
+            placeholderTextColor="#888"
+            value={taskDueDate}
+            onChangeText={setTaskDueDate}
+          />
+        </View>
+        <TouchableOpacity style={styles.btnAdd} onPress={handleAddTask}>
+          <Text style={styles.btnAddText}>Adicionar Tarefa</Text>
         </TouchableOpacity>
       </View>
 
-      {project.tasks.length === 0 ? (
-        <Text style={styles.emptyTasksText}>Nenhuma subtarefa registrada.</Text>
-      ) : (
-        project.tasks.map((task) => (
-          <View key={task.id} style={styles.taskRow}>
-            <TouchableOpacity style={styles.taskCheckbox} onPress={() => toggleTask(project.id, task.id)}>
-              <Text style={styles.checkboxText}>{task.completed ? '✓' : ''}</Text>
-            </TouchableOpacity>
-            <Text style={[styles.taskText, task.completed && styles.taskTextCompleted]}>{task.text}</Text>
-            <TouchableOpacity style={styles.btnRemoveTask} onPress={() => removeTask(project.id, task.id)}>
-              <Text style={styles.btnRemoveTaskText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-        ))
-      )}
+      {/* Lista de Tarefas Estilizada */}
+      {project.tasks.map((task) => (
+        <View key={task.id} style={styles.taskCard}>
+          <TouchableOpacity style={styles.checkbox} onPress={() => toggleTask(project.id, task.id)}>
+            <Text style={styles.checkboxMark}>{task.completed ? '✓' : ''}</Text>
+          </TouchableOpacity>
 
-      <TouchableOpacity style={styles.btnDelete} onPress={handleDeleteProject} activeOpacity={0.8}>
-        <Text style={styles.btnDeleteText}>Excluir Item</Text>
+          <View style={styles.taskInfo}>
+            <Text style={[styles.taskTitleText, task.completed && styles.completedText]}>
+              {task.text}
+            </Text>
+            <Text style={styles.taskSubText}>
+              👤 {task.assignee} | 🗓 {task.dueDate}
+            </Text>
+          </View>
+
+          <TouchableOpacity onPress={() => removeTask(project.id, task.id)}>
+            <Text style={styles.removeText}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      ))}
+
+      {/* Botão Excluir */}
+      <TouchableOpacity
+        style={styles.btnDelete}
+        onPress={() => {
+          removeProject(project.id);
+          navigation.goBack();
+        }}
+      >
+        <Text style={styles.btnDeleteText}>Excluir Projeto</Text>
       </TouchableOpacity>
     </ScrollView>
   );
 }
 
+// --- NAVEGAÇÃO E TEMAS ---
 export default function App() {
   return (
     <SafeAreaProvider>
       <NavigationContainer>
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
         <Stack.Navigator
           initialRouteName="Home"
           screenOptions={{
-            headerStyle: { backgroundColor: '#121212' },
-            headerTintColor: '#FFFFFF',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: '#000000',
             headerTitleStyle: { fontWeight: 'bold' },
-            contentStyle: { backgroundColor: '#121212' },
+            contentStyle: { backgroundColor: '#F8F9FA' },
           }}
         >
-          <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Projetos & Tarefas' }} />
-          <Stack.Screen name="ProjectDetails" component={ProjectDetailsScreen} options={{ title: 'Painel do Item' }} />
+          <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Projetos' }} />
+          <Stack.Screen name="ProjectDetails" component={ProjectDetailsScreen} options={{ title: 'Detalhes' }} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
   );
 }
 
+// --- ESTILOS VISUAIS TEMA CLARO (LIGHT) ---
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#121212' },
-  listContent: { padding: 16, paddingBottom: 80 },
-  detailsContent: { padding: 20, paddingBottom: 40 },
+  container: { flex: 1, backgroundColor: '#F8F9FA' },
+  listContent: { padding: 16 },
+  detailsContent: { padding: 20 },
 
-  card: { backgroundColor: '#1E1E1E', padding: 16, borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#2A2A2A' },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  cardTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold', flex: 1, marginRight: 8 },
-  mondayRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  mondayText: { color: '#A0A0A0', fontSize: 13, fontWeight: '600' },
-  cardDescription: { color: '#888888', fontSize: 14, marginBottom: 12 },
-  cardFooter: { borderTopWidth: 1, borderTopColor: '#2A2A2A', paddingTop: 10, flexDirection: 'row', justifyContent: 'space-between' },
-  cardInfoText: { color: '#888888', fontSize: 12 },
+  // Cards Home
+  card: { backgroundColor: '#FFFFFF', padding: 16, borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#E9ECEF' },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#1A1A1A' },
+  cardDescription: { fontSize: 14, color: '#6C757D', marginTop: 4 },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F1F3F5' },
+  cardFooterText: { fontSize: 12, color: '#868E96' },
 
   badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
   badgeText: { fontSize: 12, fontWeight: 'bold' },
 
-  fab: { position: 'absolute', right: 20, bottom: 20, backgroundColor: '#007AFF', width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
-  fabText: { color: '#FFFFFF', fontSize: 28, fontWeight: 'bold', marginTop: -2 },
+  // FAB
+  fab: { position: 'absolute', right: 20, bottom: 20, backgroundColor: '#007AFF', width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', elevation: 3 },
+  fabText: { color: '#FFFFFF', fontSize: 28, fontWeight: 'bold' },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', padding: 20 },
-  modalContent: { backgroundColor: '#1E1E1E', padding: 20, borderRadius: 12, borderWidth: 1, borderColor: '#333333' },
-  modalTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
-  input: { backgroundColor: '#121212', color: '#FFFFFF', padding: 12, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: '#333333', fontSize: 15 },
-  textArea: { height: 60, textAlignVertical: 'top' },
-  textAreaLarge: { height: 100, textAlignVertical: 'top' },
-  modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 },
-  btnCancel: { padding: 12 },
-  btnTextCancel: { color: '#A0A0A0', fontWeight: 'bold' },
-  btnSave: { backgroundColor: '#007AFF', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 8 },
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 20 },
+  modalContent: { backgroundColor: '#FFFFFF', padding: 20, borderRadius: 12 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12, color: '#1A1A1A' },
+  modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 12 },
+  btnCancel: { padding: 10 },
+  btnTextCancel: { color: '#6C757D', fontWeight: 'bold' },
+  btnSave: { backgroundColor: '#007AFF', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 },
   btnTextSave: { color: '#FFFFFF', fontWeight: 'bold' },
 
-  prioritySelector: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  priorityBtn: { flex: 1, paddingVertical: 8, backgroundColor: '#121212', borderRadius: 6, alignItems: 'center', borderWidth: 1, borderColor: '#333333' },
-  priorityBtnText: { color: '#888888', fontWeight: 'bold', fontSize: 12 },
+  // Detalhes do Projeto
+  projectTitle: { fontSize: 24, fontWeight: 'bold', color: '#000000' },
+  projectDescription: { fontSize: 15, color: '#6C757D', marginTop: 4 },
+  projectDueDate: { fontSize: 13, color: '#007AFF', fontWeight: '600', marginTop: 8 },
 
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  sectionHeaderTitle: { color: '#888888', fontSize: 13, textTransform: 'uppercase', fontWeight: 'bold' },
-  btnEditToggle: { backgroundColor: '#007AFF', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
-  btnEditToggleText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 13 },
+  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#1A1A1A', marginTop: 24, marginBottom: 12 },
 
-  viewCard: { backgroundColor: '#1E1E1E', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#2A2A2A', marginBottom: 16 },
-  editCard: { backgroundColor: '#1E1E1E', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#007AFF', marginBottom: 16 },
-  fieldLabel: { color: '#A0A0A0', fontSize: 12, fontWeight: '600', marginBottom: 4 },
+  // Status
+  statusRow: { flexDirection: 'row', gap: 8 },
+  statusBtn: { flex: 1, paddingVertical: 10, backgroundColor: '#E9ECEF', borderRadius: 8, alignItems: 'center' },
+  statusBtnActive: { backgroundColor: '#007AFF' },
+  statusBtnText: { color: '#495057', fontSize: 13, fontWeight: '600' },
+  statusBtnTextActive: { color: '#FFFFFF', fontWeight: 'bold' },
 
-  title: { color: '#FFFFFF', fontSize: 22, fontWeight: 'bold', marginBottom: 12 },
-  mondayMetaGrid: { flexDirection: 'row', gap: 8, marginBottom: 16, backgroundColor: '#121212', padding: 12, borderRadius: 8 },
-  metaBox: { flex: 1 },
-  metaLabel: { color: '#666666', fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 2 },
-  metaValue: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
+  // Form de Tarefa
+  addTaskForm: { backgroundColor: '#FFFFFF', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E9ECEF', marginBottom: 16 },
+  input: { backgroundColor: '#F8F9FA', color: '#000000', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#DEE2E6', marginBottom: 8, fontSize: 14 },
+  formRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  btnAdd: { backgroundColor: '#007AFF', padding: 12, borderRadius: 8, alignItems: 'center' },
+  btnAddText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
 
-  description: { color: '#CCCCCC', fontSize: 14, lineHeight: 20, marginBottom: 16 },
-  notesBox: { backgroundColor: '#121212', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#2A2A2A' },
-  notesText: { color: '#A0A0A0', fontSize: 13, lineHeight: 18 },
+  // Lista de Tarefas
+  taskCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: '#E9ECEF' },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#007AFF', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  checkboxMark: { color: '#007AFF', fontWeight: 'bold', fontSize: 12 },
+  taskInfo: { flex: 1 },
+  taskTitleText: { fontSize: 15, color: '#212529', fontWeight: '500' },
+  completedText: { textDecorationLine: 'line-through', color: '#ADB5BD' },
+  taskSubText: { fontSize: 12, color: '#868E96', marginTop: 2 },
+  removeText: { color: '#FF3B30', fontSize: 18, fontWeight: 'bold', paddingHorizontal: 8 },
 
-  sectionTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: 'bold', marginTop: 16, marginBottom: 10 },
-
-  statusContainer: { flexDirection: 'row', gap: 8, marginBottom: 16 },
-  statusOption: { flex: 1, paddingVertical: 10, backgroundColor: '#1E1E1E', borderRadius: 8, borderWidth: 1, borderColor: '#333333', alignItems: 'center' },
-  statusOptionText: { color: '#A0A0A0', fontSize: 12, fontWeight: '600' },
-
-  taskInputContainer: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  taskInput: { flex: 1, backgroundColor: '#1E1E1E', color: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#333333' },
-  btnAddTask: { backgroundColor: '#007AFF', paddingHorizontal: 16, justifyContent: 'center', borderRadius: 8 },
-  btnAddTaskText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 18 },
-  emptyTasksText: { color: '#666666', fontStyle: 'italic', marginBottom: 16 },
-  taskRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1E1E1E', padding: 12, borderRadius: 8, marginBottom: 8, borderWidth: 1, borderColor: '#2A2A2A' },
-  taskCheckbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#007AFF', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  checkboxText: { color: '#007AFF', fontWeight: 'bold', fontSize: 12 },
-  taskText: { flex: 1, color: '#FFFFFF', fontSize: 14 },
-  taskTextCompleted: { color: '#666666', textDecorationLine: 'line-through' },
-  btnRemoveTask: { padding: 4 },
-  btnRemoveTaskText: { color: '#FF3B30', fontSize: 14, fontWeight: 'bold' },
-
-  btnDelete: { marginTop: 28, backgroundColor: '#FF3B30', padding: 14, borderRadius: 8, alignItems: 'center' },
+  // Excluir
+  btnDelete: { marginTop: 32, backgroundColor: '#FF3B30', padding: 14, borderRadius: 8, alignItems: 'center' },
   btnDeleteText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 },
 });
+                                                                  
