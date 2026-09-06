@@ -8,6 +8,7 @@ import {
   TextInput,
   Modal,
   ScrollView,
+  Platform,
   Alert,
 } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
@@ -35,17 +36,24 @@ async function requestNotificationPermissions() {
     const { status } = await Notifications.requestPermissionsAsync();
     finalStatus = status;
   }
+  if (finalStatus !== 'granted') {
+    Alert.alert('Aviso', 'Permissão de notificações não concedida. Os lembretes automáticos não serão exibidos.');
+  }
 }
 
 async function scheduleTaskNotification(taskTitle, dateStr, timeStr) {
   try {
+    // Parser simples para dd/mm/aaaa e hh:mm
     const [day, month, year] = dateStr.split('/').map(Number);
     const [hours, minutes] = timeStr ? timeStr.split(':').map(Number) : [9, 0];
+
     if (!day || !month || !year) return null;
 
     const triggerDate = new Date(year, month - 1, day, hours, minutes, 0);
+
+    // Só agenda se a data for futura
     if (triggerDate > new Date()) {
-      return await Notifications.scheduleNotificationAsync({
+      const notificationId = await Notifications.scheduleNotificationAsync({
         content: {
           title: '📋 Lembrete de Tarefa',
           body: `A tarefa "${taskTitle}" vence hoje!`,
@@ -53,6 +61,7 @@ async function scheduleTaskNotification(taskTitle, dateStr, timeStr) {
         },
         trigger: triggerDate,
       });
+      return notificationId;
     }
   } catch (error) {
     console.log('Erro ao agendar notificação:', error);
@@ -70,18 +79,27 @@ const useProjectStore = create(
           title: 'Dashboard Filiais',
           description: 'Definir estrutura do painel gerencial',
           dueDate: '15/10/2026',
-          status: 'Em Andamento',
+          status: 'Pendente',
           tasks: [
-            { id: '101', text: 'Definir telas', assignee: 'Luciano', dueDate: '10/10/2026', dueTime: '09:00', completed: false, notificationId: null },
+            {
+              id: '101',
+              text: 'Definir telas principais',
+              assignee: 'Luciano',
+              dueDate: '10/10/2026',
+              dueTime: '09:00',
+              completed: false,
+              notificationId: null,
+            },
+            {
+              id: '102',
+              text: 'Ajustar paleta clara',
+              assignee: 'Luciano',
+              dueDate: '08/10/2026',
+              dueTime: '14:00',
+              completed: true,
+              notificationId: null,
+            },
           ],
-        },
-        {
-          id: '2',
-          title: 'Setup do Ambiente',
-          description: 'Configuração inicial do sistema',
-          dueDate: '01/09/2026',
-          status: 'Concluído',
-          tasks: [],
         },
       ],
 
@@ -179,7 +197,7 @@ const useProjectStore = create(
         })),
     }),
     {
-      name: 'projects-history-v1',
+      name: 'projects-light-notifications-v1',
       storage: createJSONStorage(() => AsyncStorage),
     }
   )
@@ -187,36 +205,7 @@ const useProjectStore = create(
 
 const Stack = createNativeStackNavigator();
 
-const getStatusColor = (status) => {
-  switch (status) {
-    case 'Concluído': return '#34C759';
-    case 'Em Andamento': return '#007AFF';
-    default: return '#FF9500';
-  }
-};
-
-// --- COMPONENTE DE CARD REUTILIZÁVEL ---
-function ProjectCard({ item, onPress }) {
-  return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>{item.title}</Text>
-        <View style={[styles.badge, { backgroundColor: getStatusColor(item.status) + '18' }]}>
-          <Text style={[styles.badgeText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
-        </View>
-      </View>
-
-      {item.description ? <Text style={styles.cardDescription}>{item.description}</Text> : null}
-
-      <View style={styles.cardFooter}>
-        <Text style={styles.cardFooterText}>🗓 Prazo Geral: {item.dueDate}</Text>
-        <Text style={styles.cardFooterText}>{item.tasks.length} tarefas</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-// --- TELA PRINCIPAL (EM ANDAMENTO / PENDENTES) ---
+// --- TELA PRINCIPAL (HOME) ---
 function HomeScreen({ navigation }) {
   const { projects, addProject } = useProjectStore();
   const [modalVisible, setModalVisible] = useState(false);
@@ -226,16 +215,7 @@ function HomeScreen({ navigation }) {
 
   useEffect(() => {
     requestNotificationPermissions();
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.navigate('History')}>
-          <Text style={styles.headerBtnText}>Histórico</Text>
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation]);
-
-  const activeProjects = projects.filter((p) => p.status !== 'Concluído');
+  }, []);
 
   const handleCreate = () => {
     if (title.trim()) {
@@ -247,25 +227,42 @@ function HomeScreen({ navigation }) {
     }
   };
 
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'Concluído': return '#34C759';
+      case 'Em Andamento': return '#007AFF';
+      default: return '#FF9500';
+    }
+  };
+
   return (
     <View style={styles.container}>
-      {activeProjects.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>Nenhum projeto em andamento.</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={activeProjects}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => (
-            <ProjectCard
-              item={item}
-              onPress={() => navigation.navigate('ProjectDetails', { projectId: item.id })}
-            />
-          )}
-        />
-      )}
+      <FlatList
+        data={projects}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContent}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => navigation.navigate('ProjectDetails', { projectId: item.id })}
+            activeOpacity={0.7}
+          >
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>{item.title}</Text>
+              <View style={[styles.badge, { backgroundColor: getStatusColor(item.status) + '18' }]}>
+                <Text style={[styles.badgeText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
+              </View>
+            </View>
+
+            {item.description ? <Text style={styles.cardDescription}>{item.description}</Text> : null}
+
+            <View style={styles.cardFooter}>
+              <Text style={styles.cardFooterText}>🗓 Prazo Geral: {item.dueDate}</Text>
+              <Text style={styles.cardFooterText}>{item.tasks.length} tarefas</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+      />
 
       <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)} activeOpacity={0.8}>
         <Text style={styles.fabText}>+</Text>
@@ -315,34 +312,6 @@ function HomeScreen({ navigation }) {
   );
 }
 
-// --- TELA DE HISTÓRICO (CONCLUÍDOS) ---
-function HistoryScreen({ navigation }) {
-  const { projects } = useProjectStore();
-  const completedProjects = projects.filter((p) => p.status === 'Concluído');
-
-  return (
-    <View style={styles.container}>
-      {completedProjects.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>Nenhum projeto encerrado no histórico.</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={completedProjects}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => (
-            <ProjectCard
-              item={item}
-              onPress={() => navigation.navigate('ProjectDetails', { projectId: item.id })}
-            />
-          )}
-        />
-      )}
-    </View>
-  );
-}
-
 // --- TELA DE DETALHES ---
 function ProjectDetailsScreen({ route, navigation }) {
   const { projectId } = route.params;
@@ -370,10 +339,12 @@ function ProjectDetailsScreen({ route, navigation }) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.detailsContent}>
+      {/* Informações Principais */}
       <Text style={styles.projectTitle}>{project.title}</Text>
       {project.description ? <Text style={styles.projectDescription}>{project.description}</Text> : null}
       <Text style={styles.projectDueDate}>🗓 Prazo Total: {project.dueDate || 'Sem prazo definido'}</Text>
 
+      {/* Status do Projeto */}
       <Text style={styles.sectionTitle}>Status do Projeto</Text>
       <View style={styles.statusRow}>
         {statusOptions.map((status) => (
@@ -389,8 +360,10 @@ function ProjectDetailsScreen({ route, navigation }) {
         ))}
       </View>
 
+      {/* Seção de Tarefas */}
       <Text style={styles.sectionTitle}>Tarefas</Text>
 
+      {/* Formulário com Notificação */}
       <View style={styles.addTaskForm}>
         <TextInput
           style={styles.input}
@@ -427,6 +400,7 @@ function ProjectDetailsScreen({ route, navigation }) {
         </TouchableOpacity>
       </View>
 
+      {/* Lista de Tarefas */}
       {project.tasks.map((task) => (
         <View key={task.id} style={styles.taskCard}>
           <TouchableOpacity style={styles.checkbox} onPress={() => toggleTask(project.id, task.id)}>
@@ -448,6 +422,7 @@ function ProjectDetailsScreen({ route, navigation }) {
         </View>
       ))}
 
+      {/* Botão Excluir */}
       <TouchableOpacity
         style={styles.btnDelete}
         onPress={() => {
@@ -472,12 +447,10 @@ export default function App() {
             headerStyle: { backgroundColor: '#FFFFFF' },
             headerTintColor: '#000000',
             headerTitleStyle: { fontWeight: 'bold' },
-            headerTitleAlign: 'center',
             contentStyle: { backgroundColor: '#F8F9FA' },
           }}
         >
-          <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Projetos em Andamento' }} />
-          <Stack.Screen name="History" component={HistoryScreen} options={{ title: 'Histórico de Concluídos' }} />
+          <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Projetos' }} />
           <Stack.Screen name="ProjectDetails" component={ProjectDetailsScreen} options={{ title: 'Detalhes' }} />
         </Stack.Navigator>
       </NavigationContainer>
@@ -489,11 +462,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   listContent: { padding: 16 },
   detailsContent: { padding: 20 },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  emptyText: { color: '#868E96', fontSize: 16 },
-
-  headerBtn: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#E9ECEF', borderRadius: 8 },
-  headerBtnText: { color: '#007AFF', fontWeight: 'bold', fontSize: 13 },
 
   card: { backgroundColor: '#FFFFFF', padding: 16, borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#E9ECEF' },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -545,4 +513,6 @@ const styles = StyleSheet.create({
   removeText: { color: '#FF3B30', fontSize: 18, fontWeight: 'bold', paddingHorizontal: 8 },
 
   btnDelete: { marginTop: 32, backgroundColor: '#FF3B30', padding: 14, borderRadius: 8, alignItems: 'center' },
-  btnDeleteText
+  btnDeleteText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 },
+});
+            
